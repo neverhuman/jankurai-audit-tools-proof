@@ -4,7 +4,6 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 cd "$REPO_ROOT"
 mkdir -p target/jankurai
-node --test scripts/ci-aggregate.test.mjs
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 bash ops/ci/governed-jankurai-hostile-test.sh

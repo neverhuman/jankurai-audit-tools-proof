@@ -69,10 +69,11 @@ prose into runtime qualification.
 - **SBOM**: the security lane runs Syft over the exact source tree and emits the
   CycloneDX artifact at `target/jankurai/sbom.json`.
 - **Provenance**: the security job runs `gitleaks detect`, offline
-  `cargo audit --no-fetch`, Syft, and workflow linting; the audit and
+  `cargo audit --no-fetch`, and Syft; the audit and
   tool-adoption lanes publish exact-head score and proof artifacts.
-- **Action pinning**: every third-party GitHub Action is pinned to a 40-character
-  commit SHA so the supply chain of the release pipeline itself is fixed.
+- **Build hosts**: GitHub is a publishing mirror and runs no workflows. CI runs
+  on the forge and our hosts, and releases are built and signed on our servers.
+  A separate change introduces key-based release signing.
 
 ## Launch gate
 

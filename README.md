@@ -4,7 +4,6 @@
 [![Jankurai score: 91/100](agent/jankurai-badge.svg)](agent/jankurai-badge.json)
 <!-- jankurai-badge:end -->
 
-[![CI](https://img.shields.io/badge/ci-pinned--lanes-green.svg)](.github/workflows/ci.yml)
 [![jankurai audit](https://img.shields.io/badge/jankurai--audit-pass-green.svg)](docs/testing.md)
 
 Rust source for the **Jankurai** proof tooling crates: `jankurai-proofbind`
@@ -33,8 +32,9 @@ just check
 ```
 
 The full command surface lives in the root [`Justfile`](Justfile). Continuous
-integration runs the same lanes under
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+integration runs the same lanes on the forge and our own hosts. GitHub is a
+publishing mirror only; it runs no workflows. Releases are built and signed on
+our servers.
 
 ## Layout
 

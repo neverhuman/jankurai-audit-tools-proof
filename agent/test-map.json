@@ -89,10 +89,6 @@
       "command": "bash scripts/ci-local.sh required",
       "purpose": "verify local CI and fusion helpers"
     },
-    ".github/": {
-      "command": "bash scripts/ci-local.sh required",
-      "purpose": "verify CI workflow entrypoints stay pinned and thin"
-    },
     ".gitignore": {
       "command": "bash scripts/ci-local.sh required",
       "purpose": "verify the exclusion list keeps transient build paths untracked"

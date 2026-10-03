@@ -8,9 +8,8 @@ ci_dir="${BASH_SOURCE[0]%/*}"
 source "$ci_dir/lib.sh"
 cd "$REPO_ROOT"
 
-log "security lane: gitleaks + cargo audit + syft SBOM + actionlint"
+log "security lane: gitleaks + cargo audit + syft SBOM"
 gitleaks detect --source . --no-banner --redact
 cargo audit
 mkdir -p target/jankurai
 syft scan dir:. -o cyclonedx-json=target/jankurai/sbom.json
-actionlint .github/workflows/ci.yml

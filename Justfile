@@ -48,15 +48,13 @@ lint:
 test:
     cargo nextest run --workspace
 
-# Security lane: secret scanning, dependency vulnerability scanning, SBOM, and
-# workflow linting. gitleaks scans for committed secrets; cargo audit checks the
-# Rust dependency tree; syft emits a CycloneDX SBOM; actionlint lints the
-# workflows so the supply chain of the pipeline itself stays pinned and safe.
+# Security lane: secret scanning, dependency vulnerability scanning, and SBOM.
+# gitleaks scans for committed secrets; cargo audit checks the Rust dependency
+# tree; syft emits a CycloneDX SBOM.
 security:
     gitleaks detect --source . --no-banner --redact
     cargo audit
     syft scan dir:. -o cyclonedx-json=target/jankurai/sbom.json
-    actionlint .github/workflows/ci.yml
 
 # Jankurai self-audit lane: writes the repo-score artifacts that CI uploads.
 audit:

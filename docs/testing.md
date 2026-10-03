@@ -70,13 +70,7 @@ Run the focused contracts with:
 
 ```sh
 cargo test -p jankurai-proofbind --test configuration_authority --locked
-node --test scripts/ci-aggregate.test.mjs
 ```
-
-The required aggregate accepts exactly `quality`, then verifies the actual job
-inventory for the current hosted run and head. Missing, renamed, duplicated,
-failed or skipped quality jobs fail. Publication is conditional. A future
-matrix requires an explicit expanded inventory and updated mutation checks.
 
 The existing tool-adoption lane uses its pinned older auditor. Its result does
 not qualify the new producer boundary. Final family adoption additionally needs
@@ -120,7 +114,7 @@ run no paid APIs, but the proof lanes still declare their bounds:
 
 - State the **budget** in time, runner minutes, or CI dollars for every lane.
 - State the **quota** or spend cap that stops the run: the workspace test and
-  audit lanes carry a fixed `timeout-minutes` in `.github/workflows/ci.yml`.
+  audit lanes run under a fixed runner timeout on our CI hosts.
 - State the **kill switch** / **stop condition**: a non-zero exit from any
   `ops/ci/*.sh` lane is the stop condition that aborts the pipeline, and the
   `spend cap` for an unbounded proof loop is the lane timeout above.

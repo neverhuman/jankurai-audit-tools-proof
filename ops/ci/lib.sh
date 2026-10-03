@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared CI helper module sourced by every ops/ci/<lane>.sh script.
 # Single source of truth for tool version pins and artifact assertions so
-# local runs and GitHub Actions execute the exact same commands.
+# local runs and the CI hosts execute the exact same commands.
 set -euo pipefail
 
 if [[ "${JANKURAI_TOOLS_CI_LIB_LOADED:-0}" == "1" ]]; then
