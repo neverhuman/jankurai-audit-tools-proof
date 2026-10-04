@@ -52,5 +52,24 @@ case "${1:-}" in
   --which) resolve "${2:-required}" || exit $?; exit 0 ;;
 esac
 
+# Several lanes of this repository invoke /usr/bin/bash by absolute path
+# (ops/ci/tool-adoption.sh, ops/ci/changed-fast-audit.sh and the evidence
+# scripts they drive). That is deliberate: those lanes run the governed build
+# under `/usr/bin/env -i ... PATH=/usr/bin:/bin` (see ops/ci/lib.sh), so the
+# sealed PATH is the only PATH the lane may rely on and an ambient `bash`
+# earlier on the caller's PATH must never be able to shadow the interpreter.
+# Keep the absolute path; on an image without /usr/bin/bash fail here with a
+# readable message instead of letting a lane die on a bare "No such file".
+# The variable exists so scripts/ci-local-lanes-test.sh can prove the guard;
+# it only redirects the existence check, never what a lane executes.
+sealed_bash="${JANKURAI_TOOLS_SEALED_BASH:-/usr/bin/bash}"
+require_sealed_bash() {
+  if [[ ! -x "$sealed_bash" ]]; then
+    echo "tools-proof requires /usr/bin/bash (sealed PATH by design)" >&2
+    return 1
+  fi
+}
+
 script="$(resolve "${1:-required}")" || exit $?
+require_sealed_bash || exit 1
 exec bash "$script"

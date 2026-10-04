@@ -37,6 +37,20 @@ same "all is an alias of gates" \
 same "no argument runs the required lane" \
   "$(bash "$dispatch" --which)" "$(bash "$dispatch" --which required)"
 
+# The lanes that run the governed build invoke /usr/bin/bash by absolute path
+# because they execute under a sealed PATH, so the dispatcher refuses to start
+# a lane on an image that has no /usr/bin/bash.
+output=""
+status=0
+output="$(JANKURAI_TOOLS_SEALED_BASH=/nonexistent/bash \
+  bash "$dispatch" required 2>&1)" || status=$?
+same "a missing sealed bash exits non-zero" "$((status != 0))" "1"
+same "a missing sealed bash explains itself" "$output" \
+  "tools-proof requires /usr/bin/bash (sealed PATH by design)"
+same "the sealed bash guard leaves --which alone" \
+  "$(JANKURAI_TOOLS_SEALED_BASH=/nonexistent/bash bash "$dispatch" --which)" \
+  "ops/ci/required.sh"
+
 status=0
 bash "$dispatch" definitely-not-a-lane >/dev/null 2>&1 || status=$?
 same "an unknown lane exits 2" "$status" "2"
