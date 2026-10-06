@@ -76,6 +76,84 @@ pub fn changed_paths_from_git(repo: &Path, base: &str) -> Result<Vec<String>> {
         .collect())
 }
 
+/// The changed paths Git itself reports as deleted, for the same change set
+/// [`resolve_changed_paths`] resolves. An explicit `changed` list carries no
+/// deletion status, so every path in it stays a required input.
+pub(crate) fn removed_changed_paths(
+    repo: &Path,
+    changed: &[PathBuf],
+    changed_from: Option<&str>,
+) -> Result<Vec<String>> {
+    if let Some(base) = changed_from {
+        let refspec = format!("{base}...HEAD");
+        let output = GitProcess::new("git")
+            .args([
+                "-c",
+                "core.fsmonitor=false",
+                "diff",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--name-only",
+                "--diff-filter=D",
+                "-z",
+                refspec.as_str(),
+                "--",
+            ])
+            .current_dir(repo)
+            .output()
+            .with_context(|| format!("run git diff for {base}"))?;
+        if !output.status.success() {
+            bail!("incomplete analysis: git diff failed for {base}");
+        }
+        return Ok(String::from_utf8(output.stdout)
+            .context("incomplete analysis: changed paths are not UTF-8")?
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(str::to_string)
+            .collect());
+    }
+    if !changed.is_empty() {
+        return Ok(Vec::new());
+    }
+    let output = GitProcess::new("git")
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+        ])
+        .current_dir(repo)
+        .output()
+        .context("incomplete analysis: run git status")?;
+    if !output.status.success() {
+        bail!("incomplete analysis: git status failed");
+    }
+    let text = String::from_utf8(output.stdout)
+        .context("incomplete analysis: changed paths are not UTF-8")?;
+    let mut entries = text.split('\0').filter(|entry| !entry.is_empty());
+    let mut removed = Vec::new();
+    while let Some(entry) = entries.next() {
+        let bytes = entry.as_bytes();
+        if bytes.len() < 4 || bytes[2] != b' ' {
+            bail!("incomplete analysis: malformed Git status");
+        }
+        if bytes[..2].contains(&b'D') {
+            removed.push(entry[3..].to_string());
+        }
+        if bytes[..2]
+            .iter()
+            .any(|status| matches!(status, b'R' | b'C'))
+        {
+            entries
+                .next()
+                .context("incomplete analysis: missing rename source")?;
+        }
+    }
+    Ok(removed)
+}
+
 pub fn local_changed_paths_from_git(repo: &Path) -> Result<Vec<String>> {
     let output = GitProcess::new("git")
         .args([

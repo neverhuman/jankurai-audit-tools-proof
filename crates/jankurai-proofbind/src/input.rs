@@ -14,6 +14,30 @@ pub(crate) fn read_text(repo: &Path, relative: &Path) -> Result<String> {
     })
 }
 
+/// True when `relative` names nothing in the working tree: the change removed it.
+/// A path that escapes the repository or crosses a symlink is still an error.
+pub(crate) fn is_removed_path(repo: &Path, relative: &Path) -> Result<bool> {
+    let mut full = repo.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            bail!("incomplete analysis: input path must stay inside the repository");
+        };
+        full.push(name);
+        match fs::symlink_metadata(&full) {
+            Ok(metadata) if metadata.is_symlink() => {
+                bail!(
+                    "incomplete analysis: symlinked input: {}",
+                    relative.display()
+                );
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(true),
+            Err(error) => return Err(error).context("incomplete analysis: inspect input"),
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) fn read_optional_text(repo: &Path, relative: &Path) -> Result<Option<String>> {
     let mut full = repo.to_path_buf();
     for component in relative.components() {

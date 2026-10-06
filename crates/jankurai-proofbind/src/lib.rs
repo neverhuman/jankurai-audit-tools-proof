@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub mod catalog;
 pub mod classify;
@@ -18,7 +18,7 @@ use catalog::Catalog;
 use classify::classify_changed_path;
 use obligations::obligation_for_surface;
 use receipts::load_receipts;
-use shared::{git_output, resolve_changed_paths, unix_seconds};
+use shared::{git_output, removed_changed_paths, resolve_changed_paths, unix_seconds};
 use summary::{obligation_summary, render_markdown, surface_summary};
 
 pub const PROOFBIND_SCHEMA_VERSION: &str = "1.0.0";
@@ -156,7 +156,19 @@ pub fn build_proofbind(request: ProofBindRequest) -> Result<ProofBindOutput> {
     )?;
     let catalog = Catalog::load(&repo)?;
     let mut surfaces = Vec::new();
+    // A path Git reports as deleted, and that the working tree no longer has,
+    // was removed: no surface is left to prove, so it binds no obligation. It
+    // stays in `changed_paths`, which records the change as given. A path named
+    // explicitly, or one Git does not report as deleted, stays a required input.
+    let removed = removed_changed_paths(
+        &repo,
+        &request.changed_paths,
+        request.changed_from.as_deref(),
+    )?;
     for path in &changed_paths {
+        if removed.contains(path) && input::is_removed_path(&repo, Path::new(path))? {
+            continue;
+        }
         surfaces.extend(classify_changed_path(&repo, &catalog, path)?);
     }
     surfaces.sort_by(|a, b| {

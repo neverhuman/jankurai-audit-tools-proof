@@ -10,6 +10,16 @@ version string lives in [`VERSION`](VERSION).
 
 ## [1.7.3] - 2026-10-06
 
+### Fixed
+
+- `jankurai proofbind` no longer fails with "required input missing" on a change
+  that deletes a file. A changed path that Git reports as deleted (in
+  `--changed-from <base>...HEAD`, or in the working-tree status) and that the
+  working tree no longer has is a removal: it stays in the witness's
+  `changed_paths` but is not read and binds no obligation. A path named
+  explicitly with `--changed` carries no deletion status and is still a required
+  input; escaping or symlinked paths are still refused.
+
 ### Changed
 
 - `agent/standard-version.toml` declares `auditor_version = "1.7.3"` (was `1.6.11`), the family auditor pin the hub's `validate-family` checks for the 1.7.3 release.

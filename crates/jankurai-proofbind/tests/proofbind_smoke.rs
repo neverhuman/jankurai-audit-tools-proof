@@ -1338,3 +1338,108 @@ purpose = "example execution"
         assert!(output.obligations.summary.missing > 0, "{label}");
     }
 }
+
+fn git(repo: &std::path::Path, args: &[&str]) {
+    let status = std::process::Command::new("git")
+        .args([
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+        ])
+        .args(["-c", "commit.gpgsign=false"])
+        .args(args)
+        .current_dir(repo)
+        .status()
+        .unwrap();
+    assert!(status.success(), "git {args:?}");
+}
+
+// A change that deletes a file names the deleted path in its diff. The path is
+// recorded as changed but is not a required input and binds no obligation.
+#[test]
+fn deleted_file_in_a_diff_is_removed_not_a_missing_input() {
+    let repo = seed_repo();
+    fs::write(
+        repo.path().join("src/auth.rs"),
+        "pub fn authorize(tenant_id: &str) -> bool { !tenant_id.is_empty() }\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/api.rs"),
+        "pub fn api() -> bool { true }\n",
+    )
+    .unwrap();
+    git(repo.path(), &["init", "-q", "-b", "main"]);
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-q", "-m", "base"]);
+    git(repo.path(), &["branch", "base"]);
+    git(repo.path(), &["rm", "-q", "src/auth.rs"]);
+    fs::write(
+        repo.path().join("src/api.rs"),
+        "pub fn api() -> bool { false }\n",
+    )
+    .unwrap();
+    git(
+        repo.path(),
+        &["commit", "-q", "-am", "remove auth, change api"],
+    );
+
+    let output = build_proofbind(ProofBindRequest {
+        repo_root: repo.path().to_path_buf(),
+        changed_paths: vec![],
+        changed_from: Some("base".into()),
+        mode: ProofBindMode::Advisory,
+        proof_receipts: None,
+    })
+    .expect("a diff that deletes a file is analyzable");
+    assert_eq!(
+        output.witness.changed_paths,
+        vec!["src/api.rs".to_string(), "src/auth.rs".to_string()]
+    );
+    assert!(output
+        .witness
+        .surfaces
+        .iter()
+        .all(|surface| surface.path != "src/auth.rs"));
+    assert!(output
+        .witness
+        .surfaces
+        .iter()
+        .any(|surface| surface.path == "src/api.rs"));
+}
+
+#[test]
+fn uncommitted_deletion_is_removed_but_an_explicit_missing_path_still_fails() {
+    let repo = seed_repo();
+    fs::write(
+        repo.path().join("src/api.rs"),
+        "pub fn api() -> bool { true }\n",
+    )
+    .unwrap();
+    git(repo.path(), &["init", "-q", "-b", "main"]);
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-q", "-m", "base"]);
+    git(repo.path(), &["rm", "-q", "src/api.rs"]);
+
+    let output = build_proofbind(ProofBindRequest {
+        repo_root: repo.path().to_path_buf(),
+        changed_paths: vec![],
+        changed_from: None,
+        mode: ProofBindMode::Required,
+        proof_receipts: None,
+    })
+    .expect("a working-tree deletion is analyzable");
+    assert_eq!(output.witness.changed_paths, vec!["src/api.rs".to_string()]);
+    assert!(output.witness.surfaces.is_empty());
+
+    // Named explicitly, the same path carries no deletion status: still required.
+    assert!(build_proofbind(ProofBindRequest {
+        repo_root: repo.path().to_path_buf(),
+        changed_paths: vec![PathBuf::from("src/api.rs")],
+        changed_from: None,
+        mode: ProofBindMode::Required,
+        proof_receipts: None,
+    })
+    .is_err());
+}
