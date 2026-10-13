@@ -69,8 +69,9 @@ repository-wide release rules against the full candidate tree; see
 
 ## Versioning
 
-The current version is recorded in [`VERSION`](VERSION) and the change history in
-[`CHANGELOG.md`](CHANGELOG.md). The local Jeryu review, proof, immutable-tag,
+The current version is recorded in [`VERSION`](VERSION). At release time,
+[`CHANGELOG.md`](CHANGELOG.md) is generated from commits since the previous
+release. The local Jeryu review, proof, immutable-tag,
 integrity, and rollback gates are documented in
 [`docs/release.md`](docs/release.md).
 

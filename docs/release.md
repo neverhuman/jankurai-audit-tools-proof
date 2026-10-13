@@ -16,9 +16,10 @@ pattern `jankurai-tools-proof-v<MAJOR.MINOR.PATCH>-split.<N>` as described in
 
 ## Changelog
 
-Every release records its user-visible changes in
+At release time, generate the release notes from the commits since the previous
+release, using their subjects and `Todo:` trailers, and write them to
 [`CHANGELOG.md`](../CHANGELOG.md) under a heading that matches the new `VERSION`.
-The `Unreleased` section is promoted to a dated version heading at tag time.
+Promote the `Unreleased` section to a dated version heading at tag time.
 
 ## Reviewed local release path
 
@@ -104,8 +105,8 @@ If a release regresses:
    (`jankurai-tools-proof-v<version>-split.<N>`).
 2. Re-pin consumers to that immutable commit and tag; tags are never moved or
    deleted.
-3. Create an additive revert commit from protected `main`, add a `### Fixed`
-   entry describing the rollback, and use the same protected review lifecycle.
+3. Create an additive revert commit from protected `main` with a commit subject
+   that describes the rollback, and use the same protected review lifecycle.
 4. Re-run `just check`, `just contract-drift`, required proof, security, and CI
    doctor on the rollback candidate before cutting a new immutable tag.
 
