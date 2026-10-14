@@ -8,8 +8,15 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-10-14
+
+`VERSION` is `1.7.4-split.0`, the member version shipped in the 1.7.4 family
+release.
+
 ### Changed
 
+- `agent/standard-version.toml` declares `auditor_version = "1.7.4"`, the
+  family auditor pin.
 - `jankurai-governed-launcher` and `ops/ci/lib.sh` no longer compile in this
   site's installation root, Cargo/rustup homes, sealed `PATH` or the retired
   loopback forge. They read them from one root-owned file,
