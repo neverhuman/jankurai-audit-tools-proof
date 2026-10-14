@@ -16,16 +16,56 @@ pub(crate) fn classify_changed_path(
     path: &str,
 ) -> Result<Vec<ChangedSurface>> {
     let text = crate::input::read_text(repo, Path::new(path))?;
+    classify_text(catalog, path, &text)
+}
+
+/// A deleted path binds what its pre-image would bind if edited (removing an
+/// authorization module, a policy file or a CI script changes behavior at least
+/// as much as editing it), plus one removal obligation that is never inert, so
+/// a change set that only deletes files can never pass with zero obligations.
+pub(crate) fn classify_removed_path(
+    catalog: &Catalog,
+    path: &str,
+    pre_image: &str,
+) -> Result<Vec<ChangedSurface>> {
+    let mut surfaces = classify_text(catalog, path, pre_image)?;
+    let (_, proof_lane) = catalog.test_for_path(path);
+    let required_lane = if path.to_ascii_lowercase().ends_with(".rs") {
+        "proofmark-rust"
+    } else if proof_lane == "unmapped" {
+        "security"
+    } else {
+        proof_lane.as_str()
+    };
+    let mut removal = surface(
+        catalog,
+        path,
+        "removal",
+        "business_invariant",
+        "medium",
+        vec!["removal", "changed_behavior"],
+        vec!["HLT-008-FALSE-GREEN-RISK"],
+        vec![required_lane],
+    );
+    removal.repair_tasks = vec![
+        "prove the removal: run the lane that covered the deleted path and attach a proof receipt"
+            .into(),
+    ];
+    surfaces.push(removal);
+    Ok(surfaces)
+}
+
+fn classify_text(catalog: &Catalog, path: &str, text: &str) -> Result<Vec<ChangedSurface>> {
     let lower_path = path.to_ascii_lowercase();
     let lower_text = text.to_ascii_lowercase();
     let mut surfaces = Vec::new();
 
-    if let Some(surfaces) = configuration::surfaces(catalog, path, &text)? {
+    if let Some(surfaces) = configuration::surfaces(catalog, path, text)? {
         return Ok(surfaces);
     }
 
     // Docs / inert control data must not become tool surfaces or HLT-008.
-    if is_inert_changed_path(&lower_path, &text) {
+    if is_inert_changed_path(&lower_path, text) {
         return Ok(surfaces);
     }
 
@@ -80,7 +120,7 @@ pub(crate) fn classify_changed_path(
     }
 
     if lower_path.ends_with(".rs") {
-        for symbol in rust_public_symbols(&text) {
+        for symbol in rust_public_symbols(text) {
             surfaces.push(surface(
                 catalog,
                 path,

@@ -1355,11 +1355,9 @@ fn git(repo: &std::path::Path, args: &[&str]) {
     assert!(status.success(), "git {args:?}");
 }
 
-// A change that deletes a file names the deleted path in its diff. The path is
-// recorded as changed but is not a required input and binds no obligation.
-#[test]
-fn deleted_file_in_a_diff_is_removed_not_a_missing_input() {
+fn committed_fixture() -> tempfile::TempDir {
     let repo = seed_repo();
+    fs::create_dir_all(repo.path().join("ops/ci")).unwrap();
     fs::write(
         repo.path().join("src/auth.rs"),
         "pub fn authorize(tenant_id: &str) -> bool { !tenant_id.is_empty() }\n",
@@ -1370,10 +1368,117 @@ fn deleted_file_in_a_diff_is_removed_not_a_missing_input() {
         "pub fn api() -> bool { true }\n",
     )
     .unwrap();
+    fs::write(
+        repo.path().join("ops/ci/security.sh"),
+        "#!/usr/bin/env bash\nset -euo pipefail\ncargo audit\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("README.md"), "# fixture\n").unwrap();
     git(repo.path(), &["init", "-q", "-b", "main"]);
     git(repo.path(), &["add", "-A"]);
     git(repo.path(), &["commit", "-q", "-m", "base"]);
     git(repo.path(), &["branch", "base"]);
+    repo
+}
+
+fn request(
+    repo: &std::path::Path,
+    changed_from: Option<&str>,
+    mode: ProofBindMode,
+) -> ProofBindRequest {
+    ProofBindRequest {
+        repo_root: repo.to_path_buf(),
+        changed_paths: vec![],
+        changed_from: changed_from.map(str::to_string),
+        mode,
+        proof_receipts: None,
+    }
+}
+
+fn surface_types(output: &jankurai_proofbind::ProofBindOutput, path: &str) -> Vec<String> {
+    output
+        .witness
+        .surfaces
+        .iter()
+        .filter(|surface| surface.path == path)
+        .map(|surface| format!("{}:{}", surface.surface_type, surface.symbol))
+        .collect()
+}
+
+fn removal_bound(output: &jankurai_proofbind::ProofBindOutput, path: &str) -> bool {
+    output.obligations.obligations.iter().any(|obligation| {
+        obligation.path == path
+            && obligation.risk_tags.iter().any(|tag| tag == "removal")
+            && obligation.rule_ids == ["HLT-008-FALSE-GREEN-RISK"]
+            && !obligation.satisfied
+    })
+}
+
+// Deleting a required input is a change to prove. The deleted file is
+// classified from its pre-image, so removing an authorization module binds the
+// same critical HLT-022 obligation editing it would, plus a removal obligation.
+// A deletion-only change set cannot pass Required mode with zero obligations.
+#[test]
+fn deletion_only_change_set_binds_obligations_and_does_not_pass() {
+    let repo = committed_fixture();
+    git(
+        repo.path(),
+        &["rm", "-q", "src/auth.rs", "ops/ci/security.sh"],
+    );
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "remove auth and CI hardening"],
+    );
+
+    let output = build_proofbind(request(repo.path(), Some("base"), ProofBindMode::Required))
+        .expect("a diff that only deletes files is analyzable");
+    assert_eq!(
+        output.witness.changed_paths,
+        vec!["ops/ci/security.sh".to_string(), "src/auth.rs".to_string()]
+    );
+    let auth = surface_types(&output, "src/auth.rs");
+    assert!(
+        auth.contains(&"authz_boundary:authz".to_string()),
+        "{auth:?}"
+    );
+    assert!(
+        auth.contains(&"business_invariant:removal".to_string()),
+        "{auth:?}"
+    );
+    let ci = surface_types(&output, "ops/ci/security.sh");
+    assert!(ci.contains(&"ci_hardening:ci".to_string()), "{ci:?}");
+    assert!(removal_bound(&output, "src/auth.rs"));
+    assert!(removal_bound(&output, "ops/ci/security.sh"));
+    let summary = &output.obligations.summary;
+    assert!(summary.total > 0 && summary.missing == summary.total);
+    assert!(summary.high_or_critical_missing > 0);
+    assert_eq!(summary.verdict, "block");
+}
+
+// Even a path whose pre-image classifies as inert (documentation) binds its
+// removal obligation: a non-empty change set never yields an empty obligation set.
+#[test]
+fn deleting_an_inert_file_still_binds_a_removal_obligation() {
+    let repo = committed_fixture();
+    git(repo.path(), &["rm", "-q", "README.md"]);
+    git(repo.path(), &["commit", "-q", "-m", "remove readme"]);
+
+    let output = build_proofbind(request(repo.path(), Some("base"), ProofBindMode::Required))
+        .expect("analyzable");
+    assert_eq!(
+        surface_types(&output, "README.md"),
+        vec!["business_invariant:removal".to_string()]
+    );
+    assert!(removal_bound(&output, "README.md"));
+    assert_eq!(output.obligations.summary.total, 1);
+    assert_ne!(output.obligations.summary.verdict, "pass");
+}
+
+// A deletion alongside an ordinary edit binds both: the edit from the working
+// tree, the deletion from its pre-image plus its removal obligation.
+#[test]
+fn deletion_alongside_real_changes_binds_both() {
+    let repo = committed_fixture();
     git(repo.path(), &["rm", "-q", "src/auth.rs"]);
     fs::write(
         repo.path().join("src/api.rs"),
@@ -1385,61 +1490,106 @@ fn deleted_file_in_a_diff_is_removed_not_a_missing_input() {
         &["commit", "-q", "-am", "remove auth, change api"],
     );
 
-    let output = build_proofbind(ProofBindRequest {
-        repo_root: repo.path().to_path_buf(),
-        changed_paths: vec![],
-        changed_from: Some("base".into()),
-        mode: ProofBindMode::Advisory,
-        proof_receipts: None,
-    })
-    .expect("a diff that deletes a file is analyzable");
+    let output = build_proofbind(request(repo.path(), Some("base"), ProofBindMode::Advisory))
+        .expect("analyzable");
     assert_eq!(
         output.witness.changed_paths,
         vec!["src/api.rs".to_string(), "src/auth.rs".to_string()]
     );
-    assert!(output
-        .witness
-        .surfaces
-        .iter()
-        .all(|surface| surface.path != "src/auth.rs"));
-    assert!(output
-        .witness
-        .surfaces
-        .iter()
-        .any(|surface| surface.path == "src/api.rs"));
+    let api = surface_types(&output, "src/api.rs");
+    assert!(api.contains(&"rust_public_api:api".to_string()), "{api:?}");
+    assert!(!api.iter().any(|surface| surface.ends_with(":removal")));
+    let auth = surface_types(&output, "src/auth.rs");
+    assert!(
+        auth.contains(&"authz_boundary:authz".to_string()),
+        "{auth:?}"
+    );
+    assert!(removal_bound(&output, "src/auth.rs"));
 }
 
+// Working-tree deletions (staged or not) are classified from the index or
+// HEAD pre-image. A path named explicitly with --changed carries no deletion
+// status, so a missing one is still a required input: the typo guard.
 #[test]
-fn uncommitted_deletion_is_removed_but_an_explicit_missing_path_still_fails() {
-    let repo = seed_repo();
-    fs::write(
-        repo.path().join("src/api.rs"),
-        "pub fn api() -> bool { true }\n",
-    )
-    .unwrap();
-    git(repo.path(), &["init", "-q", "-b", "main"]);
-    git(repo.path(), &["add", "-A"]);
-    git(repo.path(), &["commit", "-q", "-m", "base"]);
-    git(repo.path(), &["rm", "-q", "src/api.rs"]);
+fn working_tree_deletion_binds_obligations_and_explicit_missing_path_still_fails() {
+    let repo = committed_fixture();
+    git(repo.path(), &["rm", "-q", "src/auth.rs"]);
+    fs::remove_file(repo.path().join("src/api.rs")).unwrap();
 
-    let output = build_proofbind(ProofBindRequest {
-        repo_root: repo.path().to_path_buf(),
-        changed_paths: vec![],
-        changed_from: None,
-        mode: ProofBindMode::Required,
-        proof_receipts: None,
-    })
-    .expect("a working-tree deletion is analyzable");
-    assert_eq!(output.witness.changed_paths, vec!["src/api.rs".to_string()]);
-    assert!(output.witness.surfaces.is_empty());
+    let output = build_proofbind(request(repo.path(), None, ProofBindMode::Required))
+        .expect("a working-tree deletion is analyzable");
+    assert_eq!(
+        output.witness.changed_paths,
+        vec!["src/api.rs".to_string(), "src/auth.rs".to_string()]
+    );
+    assert!(surface_types(&output, "src/auth.rs").contains(&"authz_boundary:authz".to_string()));
+    assert!(surface_types(&output, "src/api.rs").contains(&"rust_public_api:api".to_string()));
+    assert!(removal_bound(&output, "src/auth.rs"));
+    assert!(removal_bound(&output, "src/api.rs"));
+    assert_ne!(output.obligations.summary.verdict, "pass");
 
-    // Named explicitly, the same path carries no deletion status: still required.
-    assert!(build_proofbind(ProofBindRequest {
+    let error = build_proofbind(ProofBindRequest {
         repo_root: repo.path().to_path_buf(),
         changed_paths: vec![PathBuf::from("src/api.rs")],
         changed_from: None,
         mode: ProofBindMode::Required,
         proof_receipts: None,
     })
-    .is_err());
+    .expect_err("an explicit missing path is a required input");
+    assert!(
+        format!("{error:#}").contains("required input missing: src/api.rs"),
+        "{error:#}"
+    );
+    let typo = build_proofbind(ProofBindRequest {
+        repo_root: repo.path().to_path_buf(),
+        changed_paths: vec![PathBuf::from("src/apii.rs")],
+        changed_from: None,
+        mode: ProofBindMode::Advisory,
+        proof_receipts: None,
+    })
+    .expect_err("a typo is never treated as a removal");
+    assert!(format!("{typo:#}").contains("required input missing: src/apii.rs"));
+}
+
+// `RD`: renamed in the index, then deleted in the working tree. The rename
+// destination is the removed path, and its pre-image comes from the index.
+#[test]
+fn rename_then_delete_binds_the_destination_removal() {
+    let repo = committed_fixture();
+    git(repo.path(), &["mv", "src/auth.rs", "src/authz.rs"]);
+    fs::remove_file(repo.path().join("src/authz.rs")).unwrap();
+
+    let output =
+        build_proofbind(request(repo.path(), None, ProofBindMode::Advisory)).expect("analyzable");
+    assert_eq!(
+        output.witness.changed_paths,
+        vec!["src/authz.rs".to_string()]
+    );
+    assert!(surface_types(&output, "src/authz.rs").contains(&"authz_boundary:authz".to_string()));
+    assert!(removal_bound(&output, "src/authz.rs"));
+}
+
+// Git reports a staged deletion, but the path is back in the working tree: it
+// is classified from what is there now, with no removal obligation.
+#[test]
+fn deleted_path_recreated_in_the_working_tree_is_read_not_removed() {
+    let repo = committed_fixture();
+    git(repo.path(), &["rm", "-q", "--cached", "src/api.rs"]);
+    fs::write(
+        repo.path().join("src/api.rs"),
+        "pub fn replaced() -> bool { true }\n",
+    )
+    .unwrap();
+
+    let output =
+        build_proofbind(request(repo.path(), None, ProofBindMode::Advisory)).expect("analyzable");
+    let api = surface_types(&output, "src/api.rs");
+    assert!(
+        api.contains(&"rust_public_api:replaced".to_string()),
+        "{api:?}"
+    );
+    assert!(
+        !api.iter().any(|surface| surface.ends_with(":removal")),
+        "{api:?}"
+    );
 }

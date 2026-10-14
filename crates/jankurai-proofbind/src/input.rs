@@ -3,7 +3,7 @@ use std::fs::{self, Metadata, OpenOptions};
 use std::io::Read;
 use std::path::{Component, Path};
 
-const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
+pub(crate) const MAX_INPUT_BYTES: u64 = 16 * 1024 * 1024;
 
 pub(crate) fn read_text(repo: &Path, relative: &Path) -> Result<String> {
     read_optional_text(repo, relative)?.with_context(|| {
@@ -15,14 +15,20 @@ pub(crate) fn read_text(repo: &Path, relative: &Path) -> Result<String> {
 }
 
 /// True when `relative` names nothing in the working tree: the change removed it.
-/// A path that escapes the repository or crosses a symlink is still an error.
+/// Every component is validated before anything is inspected, so a path that
+/// escapes the repository is an error even past a missing component; a path
+/// that crosses a symlink is an error too.
 pub(crate) fn is_removed_path(repo: &Path, relative: &Path) -> Result<bool> {
+    if relative.as_os_str().is_empty()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        bail!("incomplete analysis: input path must stay inside the repository");
+    }
     let mut full = repo.to_path_buf();
     for component in relative.components() {
-        let Component::Normal(name) = component else {
-            bail!("incomplete analysis: input path must stay inside the repository");
-        };
-        full.push(name);
+        full.push(component);
         match fs::symlink_metadata(&full) {
             Ok(metadata) if metadata.is_symlink() => {
                 bail!(
@@ -108,5 +114,33 @@ fn same_file(left: &Metadata, right: &Metadata) -> bool {
     #[cfg(not(unix))]
     {
         same
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_removed_path;
+    use std::path::Path;
+
+    #[test]
+    fn removed_path_validates_every_component_before_the_existence_check() {
+        let repo = tempfile::tempdir().unwrap();
+        assert!(is_removed_path(repo.path(), Path::new("absent/file.rs")).unwrap());
+        for escaping in ["absent/../../etc/passwd", "../outside", "/etc/passwd", ""] {
+            let error = is_removed_path(repo.path(), Path::new(escaping))
+                .expect_err("an escaping path is never a removal");
+            assert!(error.to_string().contains("stay inside the repository"));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn removed_path_refuses_a_symlinked_component() {
+        let repo = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(outside.path(), repo.path().join("link")).unwrap();
+        let error = is_removed_path(repo.path(), Path::new("link/absent.rs"))
+            .expect_err("a symlinked component is refused");
+        assert!(error.to_string().contains("symlinked input"));
     }
 }

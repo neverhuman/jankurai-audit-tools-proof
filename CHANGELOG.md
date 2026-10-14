@@ -8,21 +8,26 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
-## [1.7.3] - 2026-10-06
+## [1.7.3] - 2026-10-14
+
+`VERSION` is `1.7.3-split.0`, the member version shipped in the 1.7.3 family
+release. This section covers everything on `main` since `1.7.0-split.0`.
 
 ### Fixed
 
 - `jankurai proofbind` no longer fails with "required input missing" on a change
-  that deletes a file. A changed path that Git reports as deleted (in
-  `--changed-from <base>...HEAD`, or in the working-tree status) and that the
-  working tree no longer has is a removal: it stays in the witness's
-  `changed_paths` but is not read and binds no obligation. A path named
-  explicitly with `--changed` carries no deletion status and is still a required
-  input; escaping or symlinked paths are still refused.
-
-### Changed
-
-- `agent/standard-version.toml` declares `auditor_version = "1.7.3"` (was `1.6.11`), the family auditor pin the hub's `validate-family` checks for the 1.7.3 release.
+  that deletes a file, and a deletion still binds obligations. A changed path
+  that Git reports as deleted (in `--changed-from <base>...HEAD`, or in the
+  working-tree status) and that the working tree no longer has is classified
+  from its pre-image in Git (the merge base for `--changed-from`, otherwise the
+  index or `HEAD`), so deleting an authorization module, a policy file or a CI
+  script binds the same obligations editing it would. Every deleted path also
+  binds a `removal` obligation (`business_invariant`, HLT-008, on the lane that
+  covers the path), so a deletion-only change set can never pass with zero
+  obligations. A pre-image Git cannot produce is an incomplete analysis. A path
+  named explicitly with `--changed` carries no deletion status and is still a
+  required input, so a typo still fails; escaping or symlinked paths are still
+  refused, now checked on every path component before the existence check.
 
 ### Removed
 
@@ -46,6 +51,11 @@ version string lives in [`VERSION`](VERSION).
 
 ### Changed
 
+- `agent/standard-version.toml` declares `auditor_version = "1.7.3"` (was
+  `1.6.11`): the family auditor pin, held by every member and enforced by the
+  hub's `validate-family` (`scripts/auditor-pin.mjs`). The governed binary that
+  runs this repo's local gate is pinned separately in `ops/ci/lib.sh` and moves
+  when the governed build is re-cut.
 - Re-scoped `agent/owner-map.json`, `agent/test-map.json`, and
   `agent/generated-zones.toml` to the paths that exist in this single-purpose
   repo, and added `agent/audit-policy.toml` excluding transient build paths.

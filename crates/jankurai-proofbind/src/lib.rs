@@ -15,10 +15,10 @@ pub mod summary;
 pub mod surface_rules;
 
 use catalog::Catalog;
-use classify::classify_changed_path;
+use classify::{classify_changed_path, classify_removed_path};
 use obligations::obligation_for_surface;
 use receipts::load_receipts;
-use shared::{git_output, removed_changed_paths, resolve_changed_paths, unix_seconds};
+use shared::{git_output, removed_pre_image, resolve_change_set, unix_seconds};
 use summary::{obligation_summary, render_markdown, surface_summary};
 
 pub const PROOFBIND_SCHEMA_VERSION: &str = "1.0.0";
@@ -148,25 +148,28 @@ pub struct ProofObligation {
 
 pub fn build_proofbind(request: ProofBindRequest) -> Result<ProofBindOutput> {
     let repo = request.repo_root;
-    let changed_paths = resolve_changed_paths(
+    let change_set = resolve_change_set(
         &repo,
         &request.changed_paths,
         request.changed_from.as_deref(),
-        |_| true,
     )?;
+    let changed_paths = change_set.paths;
     let catalog = Catalog::load(&repo)?;
     let mut surfaces = Vec::new();
     // A path Git reports as deleted, and that the working tree no longer has,
-    // was removed: no surface is left to prove, so it binds no obligation. It
-    // stays in `changed_paths`, which records the change as given. A path named
-    // explicitly, or one Git does not report as deleted, stays a required input.
-    let removed = removed_changed_paths(
-        &repo,
-        &request.changed_paths,
-        request.changed_from.as_deref(),
-    )?;
+    // was removed. It is classified from its pre-image in Git and always binds a
+    // removal obligation: a deletion is a change to prove, never a free pass. A
+    // path named explicitly with `--changed` carries no deletion status, so a
+    // missing one is still a required input (the typo guard).
     for path in &changed_paths {
-        if removed.contains(path) && input::is_removed_path(&repo, Path::new(path))? {
+        if change_set.deleted.contains(path) && input::is_removed_path(&repo, Path::new(path))? {
+            let pre_image = removed_pre_image(
+                &repo,
+                path,
+                request.changed_from.as_deref(),
+                input::MAX_INPUT_BYTES,
+            )?;
+            surfaces.extend(classify_removed_path(&catalog, path, &pre_image)?);
             continue;
         }
         surfaces.extend(classify_changed_path(&repo, &catalog, path)?);
