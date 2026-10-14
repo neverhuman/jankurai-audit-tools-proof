@@ -8,6 +8,16 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
+## [1.7.5] - 2026-10-14
+
+`VERSION` is `1.7.5-split.0`, the member version shipped in the 1.7.5 family
+release.
+
+### Changed
+
+- `agent/standard-version.toml` declares `auditor_version = "1.7.5"`, the
+  family auditor pin.
+
 ## [1.7.4] - 2026-10-14
 
 `VERSION` is `1.7.4-split.0`, the member version shipped in the 1.7.4 family
