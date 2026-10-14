@@ -5,11 +5,7 @@ pub(super) fn validate_receipt(bytes: &[u8], policy: &Policy) -> Result<()> {
     let value: Value = serde_json::from_slice(bytes)
         .map_err(|_| BoundaryError("governed receipt is not valid JSON"))?;
     expect_string(&value, "/schema", "jeryu.jankurai-installation/v1")?;
-    expect_string(
-        &value,
-        "/source/remote",
-        "http://127.0.0.1:8787/git/jeryu/jankurai.git",
-    )?;
+    expect_string(&value, "/source/remote", &policy.source_remote)?;
     expect_string(
         &value,
         "/source/commit",
@@ -73,18 +69,18 @@ pub(super) fn validate_receipt(bytes: &[u8], policy: &Policy) -> Result<()> {
     expect_string(&value, "/build/no_proxy", "127.0.0.1,localhost,::1")?;
     expect_string(&value, "/binary/sha256", &policy.binary_sha256)?;
     expect_string(&value, "/binary/version_output", "jankurai 1.6.11")?;
-    expect_string(
-        &value,
-        "/installation/path",
-        &policy.binary_path.to_string_lossy(),
-    )?;
+    // The pinned receipt names one absolute installation path, so a site
+    // whose configured root differs gets a site error, not a semantic one.
+    if value.pointer("/installation/path").and_then(Value::as_str)
+        != Some(policy.binary_path.to_string_lossy().as_ref())
+    {
+        return Err(BoundaryError(
+            "governed receipt installation path does not match the configured root",
+        ));
+    }
     expect_bool(&value, "/installation/atomic", true)?;
     expect_string(&value, "/governance/status", "governed")?;
-    expect_string(
-        &value,
-        "/governance/manifest_repo",
-        "http://127.0.0.1:8787/git/jeryu/jeryu-tool.git",
-    )?;
+    expect_string(&value, "/governance/manifest_repo", &policy.manifest_repo)?;
     expect_string(
         &value,
         "/governance/manifest_commit",

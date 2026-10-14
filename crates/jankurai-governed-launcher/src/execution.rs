@@ -1,11 +1,11 @@
-use super::{BoundaryError, Result, VerifiedExecutable};
+use super::site::SiteEnvironment;
+use super::{BoundaryError, Policy, Result, VerifiedExecutable};
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::File;
 use std::io::{Seek, SeekFrom, Write};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 
 pub(super) fn sealed_copy(bytes: &[u8]) -> Result<File> {
     let name = CString::new("jankurai-governed-executable")
@@ -36,18 +36,18 @@ pub(super) fn sealed_copy(bytes: &[u8]) -> Result<File> {
 
 pub(super) fn exec_sealed(
     verified: VerifiedExecutable,
-    display_path: &Path,
+    policy: &Policy,
     arguments: Vec<OsString>,
 ) -> Result<()> {
     let mut argv = Vec::with_capacity(arguments.len() + 1);
-    argv.push(os_to_cstring(display_path.as_os_str())?);
+    argv.push(os_to_cstring(policy.binary_path.as_os_str())?);
     for argument in arguments {
         argv.push(os_to_cstring(&argument)?);
     }
     let mut argv_pointers = argv.iter().map(|value| value.as_ptr()).collect::<Vec<_>>();
     argv_pointers.push(std::ptr::null());
 
-    let environment = sealed_environment()?;
+    let environment = sealed_environment(&policy.environment)?;
     let mut environment_pointers = environment
         .iter()
         .map(|value| value.as_ptr())
@@ -67,26 +67,31 @@ pub(super) fn exec_sealed(
     Err(BoundaryError("verified executable launch failed"))
 }
 
-pub(super) fn sealed_environment() -> Result<Vec<CString>> {
+/// The complete environment the governed auditor runs with, in a stable
+/// alphabetical order: fixed hardening entries plus the Cargo/rustup homes and
+/// `PATH` from the root-owned site file (`site::load`), never from the caller.
+pub(super) fn sealed_environment(site: &SiteEnvironment) -> Result<Vec<CString>> {
     [
-        "CARGO_HOME=/home/ubuntu/.cargo",
-        "CARGO_NET_OFFLINE=true",
-        "GIT_CONFIG_GLOBAL=/dev/null",
-        "GIT_CONFIG_NOSYSTEM=1",
-        "GIT_OPTIONAL_LOCKS=0",
-        "GIT_PAGER=cat",
-        "GIT_TERMINAL_PROMPT=0",
-        "HOME=/nonexistent",
-        "JANKURAI_NO_UPDATE_CHECK=1",
-        "LANG=C.UTF-8",
-        "LC_ALL=C.UTF-8",
-        "PAGER=cat",
-        "PATH=/usr/bin:/bin:/home/ubuntu/.local/bin",
-        "RUSTUP_HOME=/home/ubuntu/.rustup",
-        "TZ=UTC",
+        format!("CARGO_HOME={}", site.cargo_home),
+        "CARGO_NET_OFFLINE=true".to_owned(),
+        "GIT_CONFIG_GLOBAL=/dev/null".to_owned(),
+        "GIT_CONFIG_NOSYSTEM=1".to_owned(),
+        "GIT_OPTIONAL_LOCKS=0".to_owned(),
+        "GIT_PAGER=cat".to_owned(),
+        "GIT_TERMINAL_PROMPT=0".to_owned(),
+        "HOME=/nonexistent".to_owned(),
+        "JANKURAI_NO_UPDATE_CHECK=1".to_owned(),
+        "LANG=C.UTF-8".to_owned(),
+        "LC_ALL=C.UTF-8".to_owned(),
+        "PAGER=cat".to_owned(),
+        format!("PATH={}", site.path),
+        format!("RUSTUP_HOME={}", site.rustup_home),
+        "TZ=UTC".to_owned(),
     ]
     .into_iter()
-    .map(|entry| CString::new(entry).map_err(|_| BoundaryError("governed environment is invalid")))
+    .map(|entry| {
+        CString::new(entry.as_bytes()).map_err(|_| BoundaryError("governed environment is invalid"))
+    })
     .collect()
 }
 

@@ -46,6 +46,21 @@ library entrypoints; the pure routing and receipt logic is deterministic.
   seals an exact memfd copy, and executes it with a fixed minimal environment.
   Caller-selected `PATH`, Cargo, Git, home, wrapper, and diff configuration
   cannot replace the governed executable or its build/runtime authority.
+  Release identity (binary and receipt SHA-256, source commit/tag/tree, build
+  toolchain) is compiled in. Site locations are not, and they are never read
+  from the caller's environment: the launcher reads one root-owned file,
+  `/etc/jankurai/governed-launcher.json` (schema `jankurai.governed-site/v1`:
+  `root`, `cargo_home`, `rustup_home`, `extra_path`, `source_remote`,
+  `manifest_repo`, nothing else). The file must be a regular single-link file
+  owned by root with no group/world write, in directories only root controls.
+  Every directory it names must be a physical directory owned by root or the
+  effective user with no world-writable component on its way from `/`. The
+  sealed `PATH` is `/usr/bin:/bin` followed by `extra_path`, and the receipt
+  must name both forge URLs exactly. `ops/ci/lib.sh` reads the same file to find
+  the rustup home and builds the launcher only with the pinned
+  `1.95.0-x86_64-unknown-linux-gnu` toolchain inside it, after checking its
+  exact `rustc`/`cargo` version strings. A host without the file refuses the
+  governed lane instead of falling back to defaults.
 
 ## Local workspace ownership
 

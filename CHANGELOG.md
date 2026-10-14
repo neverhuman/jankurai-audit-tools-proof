@@ -8,6 +8,21 @@ version string lives in [`VERSION`](VERSION).
 
 ## [Unreleased]
 
+### Changed
+
+- `jankurai-governed-launcher` and `ops/ci/lib.sh` no longer compile in this
+  site's installation root, Cargo/rustup homes, sealed `PATH` or the retired
+  loopback forge. They read them from one root-owned file,
+  `/etc/jankurai/governed-launcher.json` (`jankurai.governed-site/v1`), which
+  must be owned by root and not writable by group or world, in root-controlled
+  directories. Every directory it names must be a physical directory with no
+  world-writable component. Caller environment variables never select site
+  paths. The sealed `PATH` always starts with `/usr/bin:/bin`, the receipt must
+  name the declared forge URLs exactly, and CI builds the launcher only with
+  the pinned 1.95.0 toolchain after checking its version strings. Hosts that run
+  the governed lane must install the file (see `docs/architecture.md`).
+  Replaces the environment-variable design held on PR #2.
+
 ## [1.7.3] - 2026-10-14
 
 `VERSION` is `1.7.3-split.0`, the member version shipped in the 1.7.3 family

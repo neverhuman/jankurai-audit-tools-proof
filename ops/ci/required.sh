@@ -11,6 +11,7 @@ mkdir -p target/jankurai
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked --offline -- -D warnings
 bash ops/ci/governed-jankurai-hostile-test.sh
+bash ops/ci/governed-site-test.sh
 bash ops/ci/changed-fast-evidence-test.sh
 bash ops/ci/contract-drift.sh
 cargo test --workspace --locked

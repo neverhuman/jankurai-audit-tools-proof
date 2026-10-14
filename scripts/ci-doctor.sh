@@ -20,7 +20,7 @@ for tool in cargo rustc cargo-nextest gitleaks cargo-audit cargo-public-api; do
 done
 
 if build_governed_jankurai_launcher && require_governed_jankurai; then
-  log "ok: $GOVERNED_JANKURAI_VERSION ($GOVERNED_JANKURAI_BIN; receipt sha256:$GOVERNED_JANKURAI_RECEIPT_SHA256)"
+  log "ok: $GOVERNED_JANKURAI_VERSION ($GOVERNED_JANKURAI_BIN from $GOVERNED_SITE_CONFIG; receipt sha256:$GOVERNED_JANKURAI_RECEIPT_SHA256)"
 else
   status=1
 fi
